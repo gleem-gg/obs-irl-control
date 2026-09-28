@@ -203,8 +203,16 @@ and `--verbose` (log every request). The Flatpak build of OBS shares the host ne
   ports `useStatsServer.ts`; `src/irl-controller.*` replaces the event handlers in `app.ts`.
 - JSON is parsed with libobs' `obs_data` (jansson), HTTP with libcurl, so there are no
   extra dependencies beyond what OBS already ships.
-- `src/obs-websocket-api.h` is the MIT-licensed header from the obs-websocket project.
+- `src/obs-websocket-api.h` is the GPLv2 API header from the obs-websocket project.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Copyright (C) 2026 Anikeen UG (haftungsbeschränkt) & Co. KG
+
+This program is free software; you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version. See [LICENSE](LICENSE) for the full text.
+
+OBS Studio, libobs and the obs-websocket API header are licensed under the GPLv2. The
+original [IRL Control](https://github.com/frontpage-ev/irl-control) Node.js app this plugin
+is based on is MIT-licensed; no code was copied from it.
