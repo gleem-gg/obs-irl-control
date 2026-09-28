@@ -77,14 +77,18 @@ StatsServer::StatsServer(const IrlConfig &config)
 	: type(config.statsType),
 	  url(config.statsUrl),
 	  publisher(config.publisher),
+	  apiToken(config.apiToken),
 	  // Never let a single request outlive the polling interval by much.
-	  timeoutMs(config.intervalMs > 1000 ? config.intervalMs : 1000)
+	  timeoutMs(config.effectiveIntervalMs() > 1000 ? config.effectiveIntervalMs() : 1000)
 {
 }
 
 std::optional<StreamStats> StatsServer::fetch(std::string &error) const
 {
 	error.clear();
+	if (type == StatsServerType::Gleem)
+		return fetchGleem(error);
+
 	if (url.empty()) {
 		error = "Stats server URL is not configured";
 		return std::nullopt;
@@ -98,21 +102,31 @@ std::optional<StreamStats> StatsServer::fetch(std::string &error) const
 	}
 
 	std::string body;
-	if (!httpGet(requestUrl, body, error))
+	long status = 0;
+	if (!httpGet(requestUrl, {}, body, status, error))
 		return std::nullopt;
+	if (status < 200 || status >= 300) {
+		error = "Stats server responded with HTTP " + std::to_string(status);
+		return std::nullopt;
+	}
 
 	if (type == StatsServerType::SrtRelay)
 		return parseSrtRelay(body, error);
 	return parseBelaboxCloud(body, error);
 }
 
-bool StatsServer::httpGet(const std::string &requestUrl, std::string &body, std::string &error) const
+bool StatsServer::httpGet(const std::string &requestUrl, const std::vector<std::string> &headers, std::string &body,
+			  long &status, std::string &error) const
 {
 	CURL *curl = curl_easy_init();
 	if (!curl) {
 		error = "Failed to initialise libcurl";
 		return false;
 	}
+
+	struct curl_slist *headerList = nullptr;
+	for (const std::string &header : headers)
+		headerList = curl_slist_append(headerList, header.c_str());
 
 	char errbuf[CURL_ERROR_SIZE] = {0};
 	curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
@@ -126,18 +140,17 @@ bool StatsServer::httpGet(const std::string &requestUrl, std::string &body, std:
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs * 2);
 	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, PLUGIN_NAME "/" PLUGIN_VERSION);
+	if (headerList)
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
 
 	const CURLcode res = curl_easy_perform(curl);
-	long status = 0;
+	status = 0;
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
 	curl_easy_cleanup(curl);
+	curl_slist_free_all(headerList);
 
 	if (res != CURLE_OK) {
 		error = errbuf[0] ? errbuf : curl_easy_strerror(res);
-		return false;
-	}
-	if (status < 200 || status >= 300) {
-		error = "Stats server responded with HTTP " + std::to_string(status);
 		return false;
 	}
 	return true;
@@ -198,6 +211,156 @@ std::optional<StreamStats> StatsServer::parseBelaboxCloud(const std::string &bod
 
 	obs_data_release(pub);
 	obs_data_release(publishers);
+	obs_data_release(root);
+	return result;
+}
+
+// Gleem IRL ---------------------------------------------------------------------------------
+
+namespace {
+
+std::string gleem_api_error(const std::string &body, long status)
+{
+	std::string message;
+	obs_data_t *root = obs_data_create_from_json(body.c_str());
+	if (root) {
+		obs_data_t *err = obs_data_get_obj(root, "error");
+		if (err) {
+			message = obs_data_get_string(err, "message");
+			obs_data_release(err);
+		}
+		obs_data_release(root);
+	}
+	if (status == 401 && message.empty())
+		message = "The Gleem API token is invalid, expired or revoked";
+	if (message.empty())
+		message = "Gleem API responded with HTTP " + std::to_string(status);
+	return message;
+}
+
+// Turns one device object of the Developer API into stats, or explains why it is unhealthy.
+std::optional<StreamStats> gleem_device_stats(obs_data_t *device, std::string &error)
+{
+	const std::string name = obs_data_get_string(device, "name");
+	const std::string label = name.empty() ? "IRL box" : "IRL box '" + name + "'";
+
+	if (!obs_data_get_bool(device, "online")) {
+		error = label + " is offline";
+		return std::nullopt;
+	}
+
+	obs_data_t *stream = obs_data_get_obj(device, "stream");
+	if (!stream) {
+		error = label + " is not streaming";
+		return std::nullopt;
+	}
+
+	std::optional<StreamStats> result;
+	const std::string state = obs_data_get_string(stream, "state");
+
+	if (!obs_data_get_bool(stream, "healthy")) {
+		obs_data_t *ingest = obs_data_get_obj(device, "ingest");
+		if (state != "live")
+			error = label + " stream is " + state;
+		else if (!obs_data_get_bool(stream, "encoder_connected"))
+			error = label + " encoder is not connected";
+		else if (!ingest || !obs_data_get_bool(ingest, "publishing"))
+			error = "Stream is not arriving at Gleem ingest";
+		else
+			error = "Stream has no live link";
+		obs_data_release(ingest);
+	} else {
+		StreamStats s;
+		s.msRtt = obs_data_get_double(stream, "rtt_ms");
+		if (s.msRtt > 0.0)
+			s.values.emplace_back("RTT", s.msRtt);
+		const double bitrate = obs_data_get_double(stream, "bitrate_bps");
+		if (bitrate > 0.0)
+			s.values.emplace_back("Mbps", std::round(bitrate / 10000.0) / 100.0);
+
+		obs_data_array_t *links = obs_data_get_array(stream, "links");
+		const size_t count = obs_data_array_count(links);
+		size_t live = 0;
+		std::vector<std::pair<std::string, double>> perLink;
+		for (size_t i = 0; i < count; i++) {
+			obs_data_t *link = obs_data_array_item(links, i);
+			const std::string iface = obs_data_get_string(link, "iface");
+			if (std::string(obs_data_get_string(link, "state")) == "live") {
+				live++;
+				const std::string key = iface.empty() ? "link" + std::to_string(i) : iface;
+				const double rtt = obs_data_get_double(link, "rtt_ms");
+				const double loss = obs_data_get_double(link, "loss_pct");
+				if (rtt > 0.0)
+					perLink.emplace_back(key + " RTT", rtt);
+				if (loss > 0.0)
+					perLink.emplace_back(key + " loss%", loss);
+			}
+			obs_data_release(link);
+		}
+		obs_data_array_release(links);
+		s.values.emplace_back("Links", (double)live);
+		for (auto &entry : perLink)
+			s.values.push_back(std::move(entry));
+		result = std::move(s);
+	}
+
+	obs_data_release(stream);
+	return result;
+}
+
+} // namespace
+
+std::optional<StreamStats> StatsServer::fetchGleem(std::string &error) const
+{
+	if (apiToken.empty()) {
+		error = "Gleem API token is not configured";
+		return std::nullopt;
+	}
+
+	std::string base = url.empty() ? GLEEM_DEFAULT_URL : url;
+	while (!base.empty() && base.back() == '/')
+		base.pop_back();
+
+	// Without a device uuid the list is enough: it carries every box's full status.
+	const bool listAll = publisher.empty();
+	const std::string requestUrl = base + (listAll ? "/api/v1/irl/devices" : "/api/v1/irl/devices/" + publisher);
+
+	std::string body;
+	long status = 0;
+	if (!httpGet(requestUrl, {"Authorization: Bearer " + apiToken, "Accept: application/json"}, body, status,
+		     error))
+		return std::nullopt;
+
+	if (status == 404) {
+		error = "Gleem IRL box " + publisher + " not found";
+		return std::nullopt;
+	}
+	if (status < 200 || status >= 300) {
+		error = gleem_api_error(body, status);
+		return std::nullopt;
+	}
+
+	obs_data_t *root = obs_data_create_from_json(body.c_str());
+	if (!root) {
+		error = "Invalid JSON from the Gleem API";
+		return std::nullopt;
+	}
+
+	std::optional<StreamStats> result;
+	if (listAll) {
+		obs_data_array_t *devices = obs_data_get_array(root, "data");
+		if (obs_data_array_count(devices) == 0) {
+			error = "No Gleem IRL box on this account";
+		} else {
+			obs_data_t *device = obs_data_array_item(devices, 0);
+			result = gleem_device_stats(device, error);
+			obs_data_release(device);
+		}
+		obs_data_array_release(devices);
+	} else {
+		result = gleem_device_stats(root, error);
+	}
+
 	obs_data_release(root);
 	return result;
 }

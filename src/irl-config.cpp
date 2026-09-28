@@ -25,13 +25,22 @@
 
 const char *IrlConfig::typeToString(StatsServerType type)
 {
-	return type == StatsServerType::SrtRelay ? "srtrelay" : "belabox_cloud";
+	switch (type) {
+	case StatsServerType::SrtRelay:
+		return "srtrelay";
+	case StatsServerType::Gleem:
+		return "gleem";
+	default:
+		return "belabox_cloud";
+	}
 }
 
 StatsServerType IrlConfig::typeFromString(const char *value)
 {
 	if (value && strcmp(value, "srtrelay") == 0)
 		return StatsServerType::SrtRelay;
+	if (value && strcmp(value, "gleem") == 0)
+		return StatsServerType::Gleem;
 	return StatsServerType::BelaboxCloud;
 }
 
@@ -42,6 +51,7 @@ void IrlConfig::fromData(obs_data_t *data)
 	obs_data_set_default_string(data, "stats_server_type", typeToString(defaults.statsType));
 	obs_data_set_default_string(data, "stats_server_url", defaults.statsUrl.c_str());
 	obs_data_set_default_string(data, "stats_server_publisher", defaults.publisher.c_str());
+	obs_data_set_default_string(data, "gleem_api_token", "");
 	obs_data_set_default_string(data, "scene_normal", defaults.normalScene.c_str());
 	obs_data_set_default_string(data, "scene_offline", defaults.offlineScene.c_str());
 	obs_data_set_default_string(data, "source_info", defaults.infoSource.c_str());
@@ -55,6 +65,7 @@ void IrlConfig::fromData(obs_data_t *data)
 	statsType = typeFromString(obs_data_get_string(data, "stats_server_type"));
 	statsUrl = obs_data_get_string(data, "stats_server_url");
 	publisher = obs_data_get_string(data, "stats_server_publisher");
+	apiToken = obs_data_get_string(data, "gleem_api_token");
 	normalScene = obs_data_get_string(data, "scene_normal");
 	offlineScene = obs_data_get_string(data, "scene_offline");
 	infoSource = obs_data_get_string(data, "source_info");
@@ -76,6 +87,7 @@ void IrlConfig::toData(obs_data_t *data) const
 	obs_data_set_string(data, "stats_server_type", typeToString(statsType));
 	obs_data_set_string(data, "stats_server_url", statsUrl.c_str());
 	obs_data_set_string(data, "stats_server_publisher", publisher.c_str());
+	obs_data_set_string(data, "gleem_api_token", apiToken.c_str());
 	obs_data_set_string(data, "scene_normal", normalScene.c_str());
 	obs_data_set_string(data, "scene_offline", offlineScene.c_str());
 	obs_data_set_string(data, "source_info", infoSource.c_str());

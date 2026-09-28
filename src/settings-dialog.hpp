@@ -24,6 +24,8 @@
 
 class QCheckBox;
 class QComboBox;
+class QFormLayout;
+class QLabel;
 class QLineEdit;
 class QSpinBox;
 
@@ -40,10 +42,16 @@ private:
 	static void populateScenes(QComboBox *combo);
 	static void populateTextSources(QComboBox *combo);
 	static void selectOrInsert(QComboBox *combo, const QString &value);
+	void updateServerFields();
 
 	QComboBox *typeCombo = nullptr;
 	QLineEdit *urlEdit = nullptr;
 	QLineEdit *publisherEdit = nullptr;
+	QLineEdit *tokenEdit = nullptr;
+	QFormLayout *serverForm = nullptr;
+	QLabel *urlHint = nullptr;
+	QLabel *publisherHint = nullptr;
+	QLabel *tokenHint = nullptr;
 	QComboBox *normalSceneCombo = nullptr;
 	QComboBox *offlineSceneCombo = nullptr;
 	QComboBox *infoSourceCombo = nullptr;

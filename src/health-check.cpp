@@ -80,7 +80,7 @@ HealthSnapshot HealthCheck::snapshot() const
 void HealthCheck::run()
 {
 	blog(LOG_INFO, LOG_PREFIX "Health check started (%s, every %d ms)",
-	     IrlConfig::typeToString(config.statsType), config.intervalMs);
+	     IrlConfig::typeToString(config.statsType), config.effectiveIntervalMs());
 
 	std::unique_lock<std::mutex> lock(waitMutex);
 	while (!stopFlag) {
@@ -88,7 +88,7 @@ void HealthCheck::run()
 		if (!pausedFlag)
 			tick();
 		lock.lock();
-		waitCv.wait_for(lock, std::chrono::milliseconds(config.intervalMs), [this] { return stopFlag.load(); });
+		waitCv.wait_for(lock, std::chrono::milliseconds(config.effectiveIntervalMs()), [this] { return stopFlag.load(); });
 	}
 
 	blog(LOG_INFO, LOG_PREFIX "Health check stopped");

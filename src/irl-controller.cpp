@@ -125,6 +125,9 @@ void vendor_force_offline(obs_data_t *, obs_data_t *response, void *priv)
 void vendor_get_config(obs_data_t *, obs_data_t *response, void *priv)
 {
 	static_cast<IrlController *>(priv)->config().toData(response);
+	// Never hand the Gleem API token to obs-websocket clients.
+	obs_data_erase(response, "gleem_api_token");
+	obs_data_set_bool(response, "gleem_api_token_set", !static_cast<IrlController *>(priv)->config().apiToken.empty());
 }
 
 } // namespace
