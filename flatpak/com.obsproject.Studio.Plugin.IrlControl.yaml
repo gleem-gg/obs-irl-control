@@ -1,0 +1,35 @@
+# Flatpak extension manifest for the Flathub build of OBS Studio (32.x).
+#
+# Build and install for the current user:
+#   flatpak install flathub org.freedesktop.Sdk//25.08
+#   flatpak-builder --user --install --force-clean build-flatpak \
+#       flatpak/com.obsproject.Studio.Plugin.IrlControl.yaml
+#
+# The runtime/sdk version must match what `flatpak info com.obsproject.Studio`
+# reports as Runtime/Sdk (org.freedesktop.Platform 25.08 for OBS 32.2).
+id: com.obsproject.Studio.Plugin.IrlControl
+branch: stable
+runtime: com.obsproject.Studio
+runtime-version: stable
+sdk: org.freedesktop.Sdk//25.08
+build-extension: true
+separate-locales: false
+appstream-compose: false
+build-options:
+  prefix: /app/plugins/obs-irl-control
+  env:
+    CMAKE_PREFIX_PATH: /app
+modules:
+  - name: obs-irl-control
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/app/plugins/obs-irl-control
+      - -DCMAKE_INSTALL_LIBDIR=lib
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - build
+          - build-flatpak
+          - .flatpak-builder

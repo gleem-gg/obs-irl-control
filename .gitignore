@@ -1,0 +1,7 @@
+build*/
+.flatpak-builder/
+.cache/
+.idea/
+.vscode/
+compile_commands.json
+*.user
