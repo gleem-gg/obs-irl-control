@@ -75,19 +75,20 @@ std::string StreamStats::joined(size_t perLine) const
 
 StatsServer::StatsServer(const IrlConfig &config)
 	: type(config.statsType),
-	  url(config.statsUrl),
+	  url(config.statsType == StatsServerType::Gleem ? config.gleemUrl() : config.statsUrl),
 	  publisher(config.publisher),
-	  apiToken(config.apiToken),
+	  apiToken(config.gleemToken()),
 	  // Never let a single request outlive the polling interval by much.
 	  timeoutMs(config.effectiveIntervalMs() > 1000 ? config.effectiveIntervalMs() : 1000)
 {
 }
 
-std::optional<StreamStats> StatsServer::fetch(std::string &error) const
+std::optional<StreamStats> StatsServer::fetch(std::string &error, bool &unauthorized) const
 {
 	error.clear();
+	unauthorized = false;
 	if (type == StatsServerType::Gleem)
-		return fetchGleem(error);
+		return fetchGleem(error, unauthorized);
 
 	if (url.empty()) {
 		error = "Stats server URL is not configured";
@@ -242,7 +243,7 @@ std::string gleem_api_error(const std::string &body, long status)
 std::optional<StreamStats> gleem_device_stats(obs_data_t *device, std::string &error)
 {
 	const std::string name = obs_data_get_string(device, "name");
-	const std::string label = name.empty() ? "IRL box" : "IRL box '" + name + "'";
+	const std::string label = name.empty() ? "IRL Sidekick" : "IRL Sidekick '" + name + "'";
 
 	if (!obs_data_get_bool(device, "online")) {
 		error = label + " is offline";
@@ -310,7 +311,7 @@ std::optional<StreamStats> gleem_device_stats(obs_data_t *device, std::string &e
 
 } // namespace
 
-std::optional<StreamStats> StatsServer::fetchGleem(std::string &error) const
+std::optional<StreamStats> StatsServer::fetchGleem(std::string &error, bool &unauthorized) const
 {
 	if (apiToken.empty()) {
 		error = "Gleem API token is not configured";
@@ -332,11 +333,13 @@ std::optional<StreamStats> StatsServer::fetchGleem(std::string &error) const
 		return std::nullopt;
 
 	if (status == 404) {
-		error = "Gleem IRL box " + publisher + " not found";
+		error = "IRL Sidekick " + publisher + " not found";
 		return std::nullopt;
 	}
 	if (status < 200 || status >= 300) {
 		error = gleem_api_error(body, status);
+		// The token was refused: that says nothing about the stream.
+		unauthorized = status == 401 || status == 403;
 		return std::nullopt;
 	}
 
@@ -350,7 +353,7 @@ std::optional<StreamStats> StatsServer::fetchGleem(std::string &error) const
 	if (listAll) {
 		obs_data_array_t *devices = obs_data_get_array(root, "data");
 		if (obs_data_array_count(devices) == 0) {
-			error = "No Gleem IRL box on this account";
+			error = "No IRL Sidekick on this account";
 		} else {
 			obs_data_t *device = obs_data_array_item(devices, 0);
 			result = gleem_device_stats(device, error);

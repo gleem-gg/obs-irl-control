@@ -43,7 +43,9 @@ public:
 
 	// Returns the stats of the configured publisher, or nullopt when the publisher is
 	// not connected or the request failed. `error` describes a failure (empty otherwise).
-	std::optional<StreamStats> fetch(std::string &error) const;
+	// `unauthorized` is set when the server refused the credentials, which says
+	// nothing about the stream itself.
+	std::optional<StreamStats> fetch(std::string &error, bool &unauthorized) const;
 
 private:
 	// Transport only: true when a response arrived, whatever its status.
@@ -51,7 +53,7 @@ private:
 		     std::string &error) const;
 	std::optional<StreamStats> parseSrtRelay(const std::string &body, std::string &error) const;
 	std::optional<StreamStats> parseBelaboxCloud(const std::string &body, std::string &error) const;
-	std::optional<StreamStats> fetchGleem(std::string &error) const;
+	std::optional<StreamStats> fetchGleem(std::string &error, bool &unauthorized) const;
 
 	StatsServerType type;
 	std::string url;

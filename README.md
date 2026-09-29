@@ -114,19 +114,30 @@ Settings are stored in the OBS module config directory as `obs-irl-control/confi
 
 1. On gleem.gg open **Dashboard -> Developer** and create a token with the `irl:read` scope.
 2. In the plugin settings choose **Gleem IRL** and paste the token.
-3. Leave **API URL** empty for `https://gleem.gg`. Leave **IRL box** empty to use your first
-   box, or paste the box's UUID from its page in the Gleem dashboard.
+3. Leave **API URL** empty for `https://gleem.gg`. Leave **IRL Sidekick** empty to use your
+   first IRL Sidekick, or paste its UUID from its page in the Gleem dashboard.
 
-The plugin switches on the API's `stream.healthy` flag: the box is live with its encoder
+The plugin switches on the API's `stream.healthy` flag: the IRL Sidekick is live with its encoder
 connected and at least one live link, and Gleem ingest is passing the stream on to viewers.
 `Max RTT` still applies on top, using the bonded RTT (the mean over the live links, weighted by
 the traffic each carries). The dock and stats text source show the RTT, bitrate, live links and
 per-link RTT and loss.
 
-Gleem is polled at most every 2 seconds, and the box and ingest report every 5 and 10 seconds,
+Gleem is polled at most every 2 seconds, and the IRL Sidekick and ingest report every 5 and 10 seconds,
 so a drop is noticed within roughly 5 to 20 seconds plus the offline threshold. That is slower
 than polling a relay directly; lower the offline threshold if that matters to you. The token is
 stored in the plugin's config file and is never returned by the obs-websocket `GetConfig` request.
+
+A token the API refuses (HTTP 401 or 403) says nothing about the stream, so the plugin keeps the
+current scene and shows the error in the dock instead of switching to the offline scene.
+
+#### On a rented Gleem OBS machine
+
+A rented Gleem OBS machine hands OBS a token of its own in `GLEEM_API_TOKEN`, and the API URL in
+`GLEEM_API_URL`. With no token configured, the plugin uses that one, defaults to **Gleem IRL** and
+your first IRL Sidekick, and needs no setup at all. The token is held in memory only and is never
+written to the config file: it only reads your IRL Sidekicks, and it is revoked when the rental
+ends. A token typed into the settings still takes precedence.
 
 ## Behaviour
 

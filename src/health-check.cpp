@@ -97,11 +97,23 @@ void HealthCheck::run()
 void HealthCheck::tick()
 {
 	std::string error;
-	const std::optional<StreamStats> stats = server.fetch(error);
+	bool unauthorized = false;
+	const std::optional<StreamStats> stats = server.fetch(error, unauthorized);
 
 	{
 		std::lock_guard<std::mutex> lock(snapshotMutex);
 		snap.lastError = error;
+	}
+
+	// A refused token (say, a Gleem rental's token after the rental ended) says
+	// nothing about the stream, so the current scene stays as it is. Switching to
+	// the offline scene here would cut a healthy stream over a credentials problem.
+	if (unauthorized) {
+		offlineStart.reset();
+		std::lock_guard<std::mutex> lock(snapshotMutex);
+		snap.state = StreamState::Unknown;
+		snap.offlineDuration = 0;
+		return;
 	}
 
 	if (stats) {

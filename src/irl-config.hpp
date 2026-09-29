@@ -20,6 +20,7 @@
 
 #include <obs-data.h>
 
+#include <cstdlib>
 #include <string>
 
 enum class StatsServerType { SrtRelay, BelaboxCloud, Gleem };
@@ -28,13 +29,29 @@ enum class StatsServerType { SrtRelay, BelaboxCloud, Gleem };
 constexpr int GLEEM_MIN_INTERVAL_MS = 2000;
 constexpr const char *GLEEM_DEFAULT_URL = "https://gleem.gg";
 
+// An environment variable, or empty when unset.
+inline std::string irl_env(const char *name)
+{
+	const char *value = std::getenv(name);
+	return value ? value : "";
+}
+
 // Mirrors the config.json of the original IRL Control Node.js app.
 struct IrlConfig {
-	StatsServerType statsType = StatsServerType::BelaboxCloud;
+	// Gleem only: a token and API URL handed to OBS by its environment, as on a
+	// rented Gleem OBS machine. Used when no token is configured, held in memory
+	// only and never written to config.json, since it ends with the rental.
+	std::string envToken = irl_env("GLEEM_API_TOKEN");
+	std::string envUrl = irl_env("GLEEM_API_URL");
+
+	// With a token from the environment there is nothing left to configure, so
+	// Gleem is the default there.
+	StatsServerType statsType = envToken.empty() ? StatsServerType::BelaboxCloud : StatsServerType::Gleem;
 	// srtrelay / Belabox: the stats URL. Gleem: the API base URL (empty = https://gleem.gg).
 	std::string statsUrl;
 	// srtrelay: stream id prefix. Belabox: publisher name. Gleem: device uuid (empty = first device).
-	std::string publisher = "live";
+	// "live" is Belabox's default, which as a Gleem device would never be found.
+	std::string publisher = envToken.empty() ? "live" : "";
 	// Gleem only: a Developer API token with the irl:read scope.
 	std::string apiToken;
 
@@ -50,9 +67,16 @@ struct IrlConfig {
 	int intervalMs = 1000;
 	bool startPaused = false;
 
+	// The Gleem token actually used: the configured one, else the environment's.
+	const std::string &gleemToken() const { return apiToken.empty() ? envToken : apiToken; }
+	bool usesEnvToken() const { return apiToken.empty() && !envToken.empty(); }
+
+	// The Gleem API base URL actually used (empty = https://gleem.gg).
+	const std::string &gleemUrl() const { return statsUrl.empty() ? envUrl : statsUrl; }
+
 	bool isConfigured() const
 	{
-		return statsType == StatsServerType::Gleem ? !apiToken.empty() : !statsUrl.empty();
+		return statsType == StatsServerType::Gleem ? !gleemToken().empty() : !statsUrl.empty();
 	}
 
 	// The polling interval actually used (Gleem enforces a minimum).
