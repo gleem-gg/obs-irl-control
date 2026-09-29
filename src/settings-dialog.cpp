@@ -67,29 +67,43 @@ SettingsDialog::SettingsDialog(const IrlConfig &config, QWidget *parent) : QDial
 
 	// Stats server
 	auto *serverBox = new QGroupBox(tr_("IrlControl.Settings.StatsServer"), this);
-	auto *serverForm = new QFormLayout(serverBox);
+	serverForm = new QFormLayout(serverBox);
 
 	typeCombo = new QComboBox(serverBox);
+	typeCombo->addItem(tr_("IrlControl.Settings.Type.Gleem"),
+			   QString::fromUtf8(IrlConfig::typeToString(StatsServerType::Gleem)));
 	typeCombo->addItem(tr_("IrlControl.Settings.Type.BelaboxCloud"),
 			   QString::fromUtf8(IrlConfig::typeToString(StatsServerType::BelaboxCloud)));
 	typeCombo->addItem(tr_("IrlControl.Settings.Type.SrtRelay"),
 			   QString::fromUtf8(IrlConfig::typeToString(StatsServerType::SrtRelay)));
-	typeCombo->setCurrentIndex(config.statsType == StatsServerType::SrtRelay ? 1 : 0);
+	typeCombo->setCurrentIndex(typeCombo->findData(QString::fromUtf8(IrlConfig::typeToString(config.statsType))));
 	serverForm->addRow(tr_("IrlControl.Settings.Type"), typeCombo);
 
+	auto makeHint = [serverBox]() {
+		auto *hint = new QLabel(serverBox);
+		hint->setWordWrap(true);
+		hint->setStyleSheet("color: gray; font-size: 11px;");
+		return hint;
+	};
+
+	tokenEdit = new QLineEdit(QString::fromStdString(config.apiToken), serverBox);
+	tokenEdit->setEchoMode(QLineEdit::Password);
+	tokenEdit->setPlaceholderText("gleem_pat_...");
+	serverForm->addRow(tr_("IrlControl.Settings.Token"), tokenEdit);
+	tokenHint = makeHint();
+	tokenHint->setText(tr_("IrlControl.Settings.Token.Hint"));
+	tokenHint->setTextFormat(Qt::RichText);
+	tokenHint->setOpenExternalLinks(true);
+	serverForm->addRow(QString(), tokenHint);
+
 	urlEdit = new QLineEdit(QString::fromStdString(config.statsUrl), serverBox);
-	urlEdit->setPlaceholderText("https://stats.srt.belabox.net/XXXXX");
 	serverForm->addRow(tr_("IrlControl.Settings.Url"), urlEdit);
-	auto *urlHint = new QLabel(tr_("IrlControl.Settings.Url.Hint"), serverBox);
-	urlHint->setWordWrap(true);
-	urlHint->setStyleSheet("color: gray; font-size: 11px;");
+	urlHint = makeHint();
 	serverForm->addRow(QString(), urlHint);
 
 	publisherEdit = new QLineEdit(QString::fromStdString(config.publisher), serverBox);
 	serverForm->addRow(tr_("IrlControl.Settings.Publisher"), publisherEdit);
-	auto *publisherHint = new QLabel(tr_("IrlControl.Settings.Publisher.Hint"), serverBox);
-	publisherHint->setWordWrap(true);
-	publisherHint->setStyleSheet("color: gray; font-size: 11px;");
+	publisherHint = makeHint();
 	serverForm->addRow(QString(), publisherHint);
 
 	layout->addWidget(serverBox);
@@ -167,6 +181,9 @@ SettingsDialog::SettingsDialog(const IrlConfig &config, QWidget *parent) : QDial
 
 	layout->addWidget(healthBox);
 
+	connect(typeCombo, &QComboBox::currentIndexChanged, this, [this]() { updateServerFields(); });
+	updateServerFields();
+
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 	connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -179,6 +196,7 @@ IrlConfig SettingsDialog::result() const
 	c.statsType = IrlConfig::typeFromString(typeCombo->currentData().toString().toUtf8().constData());
 	c.statsUrl = urlEdit->text().trimmed().toStdString();
 	c.publisher = publisherEdit->text().trimmed().toStdString();
+	c.apiToken = tokenEdit->text().trimmed().toStdString();
 	c.normalScene = normalSceneCombo->currentText().trimmed().toStdString();
 	c.offlineScene = offlineSceneCombo->currentText().trimmed().toStdString();
 	c.infoSource = infoSourceCombo->currentText().trimmed().toStdString();
@@ -189,6 +207,49 @@ IrlConfig SettingsDialog::result() const
 	c.intervalMs = intervalSpin->value();
 	c.startPaused = startPausedCheck->isChecked();
 	return c;
+}
+
+void SettingsDialog::updateServerFields()
+{
+	const StatsServerType type = IrlConfig::typeFromString(typeCombo->currentData().toString().toUtf8().constData());
+	const bool gleem = type == StatsServerType::Gleem;
+
+	serverForm->setRowVisible(tokenEdit, gleem);
+	serverForm->setRowVisible(tokenHint, gleem);
+
+	auto setLabel = [this](QWidget *field, const char *key) {
+		if (auto *label = qobject_cast<QLabel *>(serverForm->labelForField(field)))
+			label->setText(tr_(key));
+	};
+
+	switch (type) {
+	case StatsServerType::Gleem:
+		setLabel(urlEdit, "IrlControl.Settings.Url.Gleem");
+		setLabel(publisherEdit, "IrlControl.Settings.Publisher.Gleem");
+		urlEdit->setPlaceholderText(QString::fromUtf8(GLEEM_DEFAULT_URL));
+		publisherEdit->setPlaceholderText(tr_("IrlControl.Settings.Publisher.Gleem.Placeholder"));
+		urlHint->setText(tr_("IrlControl.Settings.Url.Gleem.Hint"));
+		publisherHint->setText(tr_("IrlControl.Settings.Publisher.Gleem.Hint"));
+		break;
+	case StatsServerType::SrtRelay:
+		setLabel(urlEdit, "IrlControl.Settings.Url");
+		setLabel(publisherEdit, "IrlControl.Settings.Publisher");
+		urlEdit->setPlaceholderText("http://127.0.0.1:34101");
+		publisherEdit->setPlaceholderText("publish/test/");
+		urlHint->setText(tr_("IrlControl.Settings.Url.Hint"));
+		publisherHint->setText(tr_("IrlControl.Settings.Publisher.Hint"));
+		break;
+	default:
+		setLabel(urlEdit, "IrlControl.Settings.Url");
+		setLabel(publisherEdit, "IrlControl.Settings.Publisher");
+		urlEdit->setPlaceholderText("https://stats.srt.belabox.net/XXXXX");
+		publisherEdit->setPlaceholderText("live");
+		urlHint->setText(tr_("IrlControl.Settings.Url.Hint"));
+		publisherHint->setText(tr_("IrlControl.Settings.Publisher.Hint"));
+		break;
+	}
+
+	intervalSpin->setMinimum(gleem ? GLEEM_MIN_INTERVAL_MS : 250);
 }
 
 void SettingsDialog::populateScenes(QComboBox *combo)

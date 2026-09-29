@@ -22,13 +22,21 @@
 
 #include <string>
 
-enum class StatsServerType { SrtRelay, BelaboxCloud };
+enum class StatsServerType { SrtRelay, BelaboxCloud, Gleem };
+
+// Gleem's Developer API asks pollers to stay at or above this interval.
+constexpr int GLEEM_MIN_INTERVAL_MS = 2000;
+constexpr const char *GLEEM_DEFAULT_URL = "https://gleem.gg";
 
 // Mirrors the config.json of the original IRL Control Node.js app.
 struct IrlConfig {
 	StatsServerType statsType = StatsServerType::BelaboxCloud;
+	// srtrelay / Belabox: the stats URL. Gleem: the API base URL (empty = https://gleem.gg).
 	std::string statsUrl;
+	// srtrelay: stream id prefix. Belabox: publisher name. Gleem: device uuid (empty = first device).
 	std::string publisher = "live";
+	// Gleem only: a Developer API token with the irl:read scope.
+	std::string apiToken;
 
 	std::string normalScene = "Live";
 	std::string offlineScene = "Disconnected";
@@ -42,7 +50,17 @@ struct IrlConfig {
 	int intervalMs = 1000;
 	bool startPaused = false;
 
-	bool isConfigured() const { return !statsUrl.empty(); }
+	bool isConfigured() const
+	{
+		return statsType == StatsServerType::Gleem ? !apiToken.empty() : !statsUrl.empty();
+	}
+
+	// The polling interval actually used (Gleem enforces a minimum).
+	int effectiveIntervalMs() const
+	{
+		return statsType == StatsServerType::Gleem && intervalMs < GLEEM_MIN_INTERVAL_MS ? GLEEM_MIN_INTERVAL_MS
+												  : intervalMs;
+	}
 
 	static const char *typeToString(StatsServerType type);
 	static StatsServerType typeFromString(const char *value);

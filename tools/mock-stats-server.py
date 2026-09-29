@@ -12,6 +12,8 @@ Serves both formats the plugin understands from one process:
 
   srtrelay      GET http://127.0.0.1:18765/sockets
   Belabox Cloud GET http://127.0.0.1:18765/belabox
+  Gleem IRL     GET http://127.0.0.1:18765/api/v1/irl/devices[/<uuid>]
+                (needs "Authorization: Bearer mock-token", like the gleem.gg Developer API)
 
 Control the simulated stream from the terminal it runs in (type `help`) or over HTTP:
 
@@ -22,16 +24,20 @@ Control the simulated stream from the terminal it runs in (type `help`) or over 
   GET /control/rtt/<ms>        set the base RTT in milliseconds
   GET /control/flap/<seconds>  toggle online/offline automatically every N seconds (0 stops)
   GET /control/http/<code>     answer stats requests with this HTTP status (200 restores)
+  GET /control/publishing/on   Gleem: ingest passes the stream on to viewers (default)
+  GET /control/publishing/off  Gleem: the box streams, but ingest does not publish it
 
 Plugin settings to test against this server:
 
   SRT Relay:     URL http://127.0.0.1:18765          publisher publish/test/
   Belabox Cloud: URL http://127.0.0.1:18765/belabox  publisher live
+  Gleem IRL:     API URL http://127.0.0.1:18765  token mock-token  box empty (or the mock uuid)
 
 Only the Python standard library is used.
 """
 
 import argparse
+import datetime
 import json
 import random
 import sys
@@ -48,6 +54,7 @@ class StreamState:
         self.online = online
         self.rtt = float(rtt)
         self.http_status = 200
+        self.publishing = True
         self.flap_interval = 0.0
         self.started = time.time()
         self.pkt_sent = 0
@@ -72,6 +79,11 @@ class StreamState:
         with self.lock:
             self.http_status = int(code)
         log(f"stats endpoints now answer HTTP {code}")
+
+    def set_publishing(self, publishing):
+        with self.lock:
+            self.publishing = publishing
+        log(f"ingest publishing {'ON' if publishing else 'OFF'}")
 
     def set_flap(self, seconds):
         with self.lock:
@@ -100,6 +112,7 @@ class StreamState:
                 "rtt": round(self._jittered_rtt(), 2),
                 "base_rtt": self.rtt,
                 "http_status": self.http_status,
+                "publishing": self.publishing,
                 "flap_interval": self.flap_interval,
                 "uptime": round(time.time() - self.started, 1),
                 "pkt_sent": self.pkt_sent,
@@ -153,6 +166,58 @@ class StreamState:
         }
 
 
+    def gleem_device(self):
+        """One device in the shape of gleem.gg's GET /api/v1/irl/devices/{uuid}."""
+        s = self.snapshot()
+        now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        iso = lambda t: t.isoformat()
+        stream = None
+        if s["online"]:
+            wwan0_bps = random.randint(2800000, 3200000)
+            wwan1_bps = random.randint(900000, 1200000)
+            wwan0_rtt = round(max(1.0, s["rtt"] - 10 + random.uniform(-3, 3)), 1)
+            wwan1_rtt = round(s["rtt"] + 40 + random.uniform(-5, 5), 1)
+            links = [
+                {"link_id": 0, "iface": "wwan0", "state": "live", "rtt_ms": wwan0_rtt,
+                 "loss_pct": round(random.uniform(0, 0.8), 2), "tx_bps": wwan0_bps},
+                {"link_id": 1, "iface": "wwan1", "state": "live", "rtt_ms": wwan1_rtt,
+                 "loss_pct": round(random.uniform(0, 2), 2), "tx_bps": wwan1_bps},
+            ]
+            rtt = round((wwan0_rtt * wwan0_bps + wwan1_rtt * wwan1_bps) / (wwan0_bps + wwan1_bps), 1)
+            stream = {
+                "state": "live",
+                "sid": "0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b",
+                "started_at": iso(now - datetime.timedelta(seconds=s["uptime"])),
+                "error": None,
+                "encoder_connected": True,
+                "bitrate_bps": wwan0_bps + wwan1_bps,
+                "rtt_ms": rtt,
+                "links": links,
+                "healthy": s["publishing"],
+            }
+        ingest = None
+        if s["online"]:
+            ingest = {
+                "region": "mock",
+                "publishing": s["publishing"],
+                "last_reported_at": iso(now),
+                "average_bps": 4100000,
+                "peak_bps": 4600000,
+            }
+        return {
+            "uuid": GLEEM_UUID,
+            "name": "Mock Backpack",
+            # The box keeps heartbeating while idle: "offline" here means the stream stopped.
+            "online": True,
+            "last_seen_at": iso(now),
+            "stream": stream,
+            "ingest": ingest,
+            "poll_interval_seconds": 2,
+        }
+
+
+GLEEM_UUID = "9d3c2f4e-6b1a-4c8e-9f2d-1a2b3c4d5e6f"
+GLEEM_TOKEN = "mock-token"
 STATE = None
 VERBOSE = False
 
@@ -186,6 +251,8 @@ class Handler(BaseHTTPRequestHandler):
         if status != 200:
             return self._send({"error": "simulated failure"}, status)
 
+        if path.startswith("/api/v1/irl/devices"):
+            return self._gleem(path)
         if path == "/sockets":
             return self._send(STATE.srtrelay())
         if path in ("/belabox", "/"):
@@ -193,6 +260,15 @@ class Handler(BaseHTTPRequestHandler):
         return self._send({"error": "not found"}, 404)
 
     do_POST = do_GET
+
+    def _gleem(self, path):
+        if self.headers.get("Authorization", "") != f"Bearer {GLEEM_TOKEN}":
+            return self._send({"error": {"code": "unauthenticated", "message": "Missing or invalid API token."}}, 401)
+        if path == "/api/v1/irl/devices":
+            return self._send({"data": [STATE.gleem_device()]})
+        if path == f"/api/v1/irl/devices/{GLEEM_UUID}":
+            return self._send(STATE.gleem_device())
+        return self._send({"error": {"code": "not_found", "message": "Not found."}}, 404)
 
     def _control(self, args):
         try:
@@ -210,6 +286,8 @@ class Handler(BaseHTTPRequestHandler):
                 STATE.set_flap(float(args[1]))
             elif args[0] == "http" and len(args) > 1:
                 STATE.set_http_status(int(args[1]))
+            elif args[0] == "publishing" and len(args) > 1:
+                STATE.set_publishing(args[1] in ("on", "1", "true"))
             else:
                 return self._send({"error": "unknown control command"}, 400)
         except ValueError:
@@ -233,6 +311,7 @@ HELP = """commands:
   rtt <ms>                    set base RTT (plugin default: warn 500, max 2000)
   flap <seconds>              toggle automatically every N seconds (0 = stop)
   http <code>                 answer stats requests with this status (200 = normal)
+  publishing on|off           Gleem: whether ingest passes the stream on
   status                      print current state
   quit                        stop the server"""
 
@@ -256,6 +335,8 @@ def stdin_loop(server):
                 STATE.set_flap(float(cmd[1]))
             elif cmd[0] == "http" and len(cmd) > 1:
                 STATE.set_http_status(int(cmd[1]))
+            elif cmd[0] == "publishing" and len(cmd) > 1:
+                STATE.set_publishing(cmd[1] in ("on", "1", "true"))
             elif cmd[0] == "status":
                 log(json.dumps(STATE.snapshot()))
             elif cmd[0] in ("quit", "exit", "q"):
@@ -288,6 +369,7 @@ def main():
     log(f"listening on {base}")
     log(f"  srtrelay:      URL {base}          publisher {args.stream_id}")
     log(f"  Belabox Cloud: URL {base}/belabox  publisher {args.publisher}")
+    log(f"  Gleem IRL:     API URL {base}  token {GLEEM_TOKEN}  box empty or {GLEEM_UUID}")
     log(f"  control:       {base}/control/offline  {base}/control/online  {base}/control/rtt/2500")
     log(f"stream is {'ONLINE' if STATE.online else 'OFFLINE'}, base RTT {args.rtt} ms")
 

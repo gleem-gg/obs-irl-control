@@ -7,11 +7,13 @@ Where the original IRL Control is a Node.js app that talks to OBS over obs-webso
 plugin runs *inside* OBS: no Node.js, no obs-websocket connection, no extra process. It
 polls your [srtrelay](https://github.com/frontpage-ev/srtrelay) or
 [Belabox Cloud](https://cloud.belabox.net) stats endpoint and switches between an online
-and an offline scene when the stream drops or the RTT gets too high.
+and an offline scene when the stream drops or the RTT gets too high. It also supports
+[Gleem IRL](https://gleem.gg/irl-sidekick) boxes through the gleem.gg Developer API.
 
 ## Features
 
-- Polls **srtrelay** (`/sockets`) or **Belabox Cloud** stats every second (configurable).
+- Polls **srtrelay** (`/sockets`) or **Belabox Cloud** stats every second (configurable), or
+  the stream health of a **Gleem IRL** box from the gleem.gg Developer API.
 - Switches to the **offline scene** after the stream has been unhealthy for N seconds and
   back to the **online scene** as soon as it recovers (same state machine as IRL Control).
 - Treats an RTT above `Max RTT` as unhealthy, exactly like the Node.js health check.
@@ -91,7 +93,8 @@ Open the **IRL Control** dock (`Docks -> IRL Control`) and click **Settings...**
 
 | Setting | Description | IRL Control equivalent |
 | --- | --- | --- |
-| Type | `Belabox Cloud` or `SRT Relay (srtrelay)` | `stats_server.type` |
+| Type | `Gleem IRL`, `Belabox Cloud` or `SRT Relay (srtrelay)` | `stats_server.type` |
+| API token | Gleem only: a Developer API token with the `irl:read` scope | - |
 | URL | `https://stats.srt.belabox.net/XXXXX` or `http://127.0.0.1:34101` | `stats_server.url` |
 | Publisher / stream id | Belabox publisher name (`live`) or srtrelay stream id prefix (`publish/test/`) | `stats_server.publisher` |
 | Online scene | Scene to show while the stream is healthy | `obs.scenes.normal` |
@@ -104,8 +107,26 @@ Open the **IRL Control** dock (`Docks -> IRL Control`) and click **Settings...**
 | Check interval | Polling interval in milliseconds | hard-coded `1000` |
 | Start paused | Do not switch automatically until you press Resume | - |
 
-The plugin does nothing until a stats server URL is configured. Settings are stored in
-the OBS module config directory as `obs-irl-control/config.json`.
+The plugin does nothing until a stats server URL (or, for Gleem, an API token) is configured.
+Settings are stored in the OBS module config directory as `obs-irl-control/config.json`.
+
+### Gleem IRL
+
+1. On gleem.gg open **Dashboard -> Developer** and create a token with the `irl:read` scope.
+2. In the plugin settings choose **Gleem IRL** and paste the token.
+3. Leave **API URL** empty for `https://gleem.gg`. Leave **IRL box** empty to use your first
+   box, or paste the box's UUID from its page in the Gleem dashboard.
+
+The plugin switches on the API's `stream.healthy` flag: the box is live with its encoder
+connected and at least one live link, and Gleem ingest is passing the stream on to viewers.
+`Max RTT` still applies on top, using the bonded RTT (the mean over the live links, weighted by
+the traffic each carries). The dock and stats text source show the RTT, bitrate, live links and
+per-link RTT and loss.
+
+Gleem is polled at most every 2 seconds, and the box and ingest report every 5 and 10 seconds,
+so a drop is noticed within roughly 5 to 20 seconds plus the offline threshold. That is slower
+than polling a relay directly; lower the offline threshold if that matters to you. The token is
+stored in the plugin's config file and is never returned by the obs-websocket `GetConfig` request.
 
 ## Behaviour
 
@@ -148,7 +169,7 @@ When obs-websocket (bundled with OBS 28+) is active, the plugin registers the ve
 | Request | Description |
 | --- | --- |
 | `GetStatus` | Returns `configured`, `running`, `paused`, `state` (`online`/`offline`/`unknown`), `marked_offline`, `ms_rtt`, `offline_duration`, `stats`, `last_error` |
-| `GetConfig` | Returns the current configuration |
+| `GetConfig` | Returns the current configuration (the Gleem token is replaced by `gleem_api_token_set`) |
 | `Pause` / `Resume` / `TogglePause` | Control automatic switching (returns the status) |
 | `ForceOnline` / `ForceOffline` | Switch scenes manually (returns the status) |
 
@@ -179,9 +200,10 @@ Then configure the plugin with one of:
 | --- | --- | --- |
 | SRT Relay | `http://127.0.0.1:18765` | `publish/test/` |
 | Belabox Cloud | `http://127.0.0.1:18765/belabox` | `live` |
+| Gleem IRL | API URL `http://127.0.0.1:18765`, token `mock-token` | empty, or `9d3c2f4e-6b1a-4c8e-9f2d-1a2b3c4d5e6f` |
 
 Drive the simulation from the terminal the server runs in (`offline`, `online`, `toggle`,
-`rtt 2500`, `flap 20`, `http 503`, `status`, `quit`) or from anywhere over HTTP:
+`rtt 2500`, `flap 20`, `http 503`, `publishing off`, `status`, `quit`) or from anywhere over HTTP:
 
 ```bash
 curl http://127.0.0.1:18765/control/offline     # plugin switches to the offline scene after the threshold
@@ -190,6 +212,7 @@ curl http://127.0.0.1:18765/control/rtt/2500    # RTT above Max RTT counts as un
 curl http://127.0.0.1:18765/control/rtt/120
 curl http://127.0.0.1:18765/control/flap/20     # toggle automatically every 20 s (0 stops)
 curl http://127.0.0.1:18765/control/http/503    # simulate a broken stats server (200 restores)
+curl http://127.0.0.1:18765/control/publishing/off  # Gleem: box streams but ingest does not publish
 curl http://127.0.0.1:18765/control             # current simulated state
 ```
 
