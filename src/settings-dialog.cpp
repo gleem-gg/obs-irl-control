@@ -92,6 +92,12 @@ SettingsDialog::SettingsDialog(const IrlConfig &config, QWidget *parent) : QDial
 	serverForm->addRow(tr_("IrlControl.Settings.Token"), tokenEdit);
 	tokenHint = makeHint();
 	tokenHint->setText(tr_("IrlControl.Settings.Token.Hint"));
+	if (!config.envToken.empty()) {
+		// A rented Gleem OBS machine brings its own token. A token typed here
+		// still wins, so the field stays editable.
+		tokenEdit->setPlaceholderText(tr_("IrlControl.Settings.Token.FromRental"));
+		tokenHint->setText(tr_("IrlControl.Settings.Token.FromRental.Hint"));
+	}
 	tokenHint->setTextFormat(Qt::RichText);
 	tokenHint->setOpenExternalLinks(true);
 	serverForm->addRow(QString(), tokenHint);
