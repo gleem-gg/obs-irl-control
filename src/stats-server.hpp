@@ -35,6 +35,13 @@ struct StreamStats {
 	std::string joined(size_t perLine = 3) const;
 };
 
+// One IRL Sidekick on the Gleem account, as listed by the Developer API.
+struct GleemDevice {
+	std::string uuid;
+	std::string name;
+	bool online = false;
+};
+
 // Fetches stream statistics from an srtrelay or Belabox Cloud stats endpoint, or the
 // stream health of a Gleem IRL box from the gleem.gg Developer API.
 class StatsServer {
@@ -47,6 +54,10 @@ public:
 	// nothing about the stream itself.
 	std::optional<StreamStats> fetch(std::string &error, bool &unauthorized) const;
 
+	// Gleem only: every IRL Sidekick the token can see, for picking one in the
+	// settings. Blocks on the network; false with `error` set on failure.
+	bool listGleemDevices(std::vector<GleemDevice> &devices, std::string &error) const;
+
 private:
 	// Transport only: true when a response arrived, whatever its status.
 	bool httpGet(const std::string &url, const std::vector<std::string> &headers, std::string &body, long &status,
@@ -54,6 +65,7 @@ private:
 	std::optional<StreamStats> parseSrtRelay(const std::string &body, std::string &error) const;
 	std::optional<StreamStats> parseBelaboxCloud(const std::string &body, std::string &error) const;
 	std::optional<StreamStats> fetchGleem(std::string &error, bool &unauthorized) const;
+	std::string gleemBaseUrl() const;
 
 	StatsServerType type;
 	std::string url;

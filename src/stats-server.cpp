@@ -311,6 +311,14 @@ std::optional<StreamStats> gleem_device_stats(obs_data_t *device, std::string &e
 
 } // namespace
 
+std::string StatsServer::gleemBaseUrl() const
+{
+	std::string base = url.empty() ? GLEEM_DEFAULT_URL : url;
+	while (!base.empty() && base.back() == '/')
+		base.pop_back();
+	return base;
+}
+
 std::optional<StreamStats> StatsServer::fetchGleem(std::string &error, bool &unauthorized) const
 {
 	if (apiToken.empty()) {
@@ -318,9 +326,7 @@ std::optional<StreamStats> StatsServer::fetchGleem(std::string &error, bool &una
 		return std::nullopt;
 	}
 
-	std::string base = url.empty() ? GLEEM_DEFAULT_URL : url;
-	while (!base.empty() && base.back() == '/')
-		base.pop_back();
+	const std::string base = gleemBaseUrl();
 
 	// Without a device uuid the list is enough: it carries every box's full status.
 	const bool listAll = publisher.empty();
@@ -366,4 +372,46 @@ std::optional<StreamStats> StatsServer::fetchGleem(std::string &error, bool &una
 
 	obs_data_release(root);
 	return result;
+}
+
+bool StatsServer::listGleemDevices(std::vector<GleemDevice> &devices, std::string &error) const
+{
+	devices.clear();
+	error.clear();
+	if (apiToken.empty()) {
+		error = "Gleem API token is not configured";
+		return false;
+	}
+
+	std::string body;
+	long status = 0;
+	if (!httpGet(gleemBaseUrl() + "/api/v1/irl/devices", {"Authorization: Bearer " + apiToken, "Accept: application/json"},
+		     body, status, error))
+		return false;
+	if (status < 200 || status >= 300) {
+		error = gleem_api_error(body, status);
+		return false;
+	}
+
+	obs_data_t *root = obs_data_create_from_json(body.c_str());
+	if (!root) {
+		error = "Invalid JSON from the Gleem API";
+		return false;
+	}
+
+	obs_data_array_t *list = obs_data_get_array(root, "data");
+	const size_t count = obs_data_array_count(list);
+	for (size_t i = 0; i < count; i++) {
+		obs_data_t *device = obs_data_array_item(list, i);
+		GleemDevice d;
+		d.uuid = obs_data_get_string(device, "uuid");
+		d.name = obs_data_get_string(device, "name");
+		d.online = obs_data_get_bool(device, "online");
+		if (!d.uuid.empty())
+			devices.push_back(std::move(d));
+		obs_data_release(device);
+	}
+	obs_data_array_release(list);
+	obs_data_release(root);
+	return true;
 }

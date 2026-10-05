@@ -114,8 +114,9 @@ Settings are stored in the OBS module config directory as `obs-irl-control/confi
 
 1. On gleem.gg open **Dashboard -> Developer** and create a token with the `irl:read` scope.
 2. In the plugin settings choose **Gleem IRL** and paste the token.
-3. Leave **API URL** empty for `https://gleem.gg`. Leave **IRL Sidekick** empty to use your
-   first IRL Sidekick, or paste its UUID from its page in the Gleem dashboard.
+3. Leave **API URL** empty for `https://gleem.gg`, then pick your device from the **IRL Sidekick**
+   list, which the plugin loads from your account (press **Refresh** after pairing a new one).
+   *First IRL Sidekick on the account* follows whichever comes first, sorted by name.
 
 The plugin switches on the API's `stream.healthy` flag: the IRL Sidekick is live with its encoder
 connected and at least one live link, and Gleem ingest is passing the stream on to viewers.
