@@ -71,6 +71,8 @@ private:
 	QLabel *urlHint = nullptr;
 	QLabel *publisherHint = nullptr;
 	QLabel *tokenHint = nullptr;
+	// Gleem: the environment provides token and API URL, so their fields are hidden.
+	bool envCredentials = false;
 	QComboBox *normalSceneCombo = nullptr;
 	QComboBox *offlineSceneCombo = nullptr;
 	QComboBox *infoSourceCombo = nullptr;

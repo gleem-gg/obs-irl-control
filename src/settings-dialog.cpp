@@ -99,12 +99,7 @@ SettingsDialog::SettingsDialog(const IrlConfig &config, QWidget *parent) : QDial
 	serverForm->addRow(tr_("IrlControl.Settings.Token"), tokenEdit);
 	tokenHint = makeHint();
 	tokenHint->setText(tr_("IrlControl.Settings.Token.Hint"));
-	if (!config.envToken.empty()) {
-		// A rented Gleem OBS machine brings its own token. A token typed here
-		// still wins, so the field stays editable.
-		tokenEdit->setPlaceholderText(tr_("IrlControl.Settings.Token.FromRental"));
-		tokenHint->setText(tr_("IrlControl.Settings.Token.FromRental.Hint"));
-	}
+	envCredentials = config.usesEnvToken();
 	tokenHint->setTextFormat(Qt::RichText);
 	tokenHint->setOpenExternalLinks(true);
 	serverForm->addRow(QString(), tokenHint);
@@ -248,9 +243,12 @@ IrlConfig SettingsDialog::result() const
 	IrlConfig c;
 	c.statsType = IrlConfig::typeFromString(typeCombo->currentData().toString().toUtf8().constData());
 	c.statsUrl = urlEdit->text().trimmed().toStdString();
+	// Hidden fields keep nothing: the environment's token and URL are used.
+	if (c.statsType == StatsServerType::Gleem && envCredentials)
+		c.statsUrl.clear();
 	c.publisher = c.statsType == StatsServerType::Gleem ? selectedDevice().toStdString()
 							    : publisherEdit->text().trimmed().toStdString();
-	c.apiToken = tokenEdit->text().trimmed().toStdString();
+	c.apiToken = envCredentials ? std::string() : tokenEdit->text().trimmed().toStdString();
 	c.normalScene = normalSceneCombo->currentText().trimmed().toStdString();
 	c.offlineScene = offlineSceneCombo->currentText().trimmed().toStdString();
 	c.infoSource = infoSourceCombo->currentText().trimmed().toStdString();
@@ -268,8 +266,12 @@ void SettingsDialog::updateServerFields()
 	const StatsServerType type = IrlConfig::typeFromString(typeCombo->currentData().toString().toUtf8().constData());
 	const bool gleem = type == StatsServerType::Gleem;
 
-	serverForm->setRowVisible(tokenEdit, gleem);
-	serverForm->setRowVisible(tokenHint, gleem);
+	// A rented Gleem OBS machine brings token and API URL: nothing to enter.
+	const bool credentials = gleem && !envCredentials;
+	serverForm->setRowVisible(tokenEdit, credentials);
+	serverForm->setRowVisible(tokenHint, credentials);
+	serverForm->setRowVisible(urlEdit, !gleem || credentials);
+	serverForm->setRowVisible(urlHint, !gleem || credentials);
 	serverForm->setRowVisible(publisherEdit, !gleem);
 	serverForm->setRowVisible(publisherHint, !gleem);
 	serverForm->setRowVisible(deviceRow, gleem);
@@ -307,7 +309,7 @@ void SettingsDialog::updateServerFields()
 
 void SettingsDialog::loadDevices()
 {
-	// A fresh IrlConfig carries the environment's token and URL as fallbacks.
+	// A fresh IrlConfig carries the environment's token and URL, which win when set.
 	IrlConfig c;
 	c.statsType = StatsServerType::Gleem;
 	c.statsUrl = urlEdit->text().trimmed().toStdString();

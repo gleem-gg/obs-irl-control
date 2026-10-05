@@ -135,10 +135,10 @@ current scene and shows the error in the dock instead of switching to the offlin
 #### On a rented Gleem OBS machine
 
 A rented Gleem OBS machine hands OBS a token of its own in `GLEEM_API_TOKEN`, and the API URL in
-`GLEEM_API_URL`. With no token configured, the plugin uses that one, defaults to **Gleem IRL** and
-your first IRL Sidekick, and needs no setup at all. The token is held in memory only and is never
+`GLEEM_API_URL`. The plugin then uses those, hides the **API token** and **API URL** fields, defaults
+to **Gleem IRL** and your first IRL Sidekick, and needs no setup at all. The token is held in memory only and is never
 written to the config file: it only reads your IRL Sidekicks, and it is revoked when the rental
-ends. A token typed into the settings still takes precedence.
+ends. While `GLEEM_API_TOKEN` is set it takes precedence over a token in the config file.
 
 ## Behaviour
 
