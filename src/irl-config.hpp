@@ -39,8 +39,9 @@ inline std::string irl_env(const char *name)
 // Mirrors the config.json of the original IRL Control Node.js app.
 struct IrlConfig {
 	// Gleem only: a token and API URL handed to OBS by its environment, as on a
-	// rented Gleem OBS machine. Used when no token is configured, held in memory
-	// only and never written to config.json, since it ends with the rental.
+	// rented Gleem OBS machine. They take precedence over the configured ones (the
+	// settings hide those fields then), are held in memory only and never written
+	// to config.json, since the token ends with the rental.
 	std::string envToken = irl_env("GLEEM_API_TOKEN");
 	std::string envUrl = irl_env("GLEEM_API_URL");
 
@@ -67,12 +68,13 @@ struct IrlConfig {
 	int intervalMs = 1000;
 	bool startPaused = false;
 
-	// The Gleem token actually used: the configured one, else the environment's.
-	const std::string &gleemToken() const { return apiToken.empty() ? envToken : apiToken; }
-	bool usesEnvToken() const { return apiToken.empty() && !envToken.empty(); }
+	// The Gleem token actually used: the environment's, else the configured one.
+	const std::string &gleemToken() const { return usesEnvToken() ? envToken : apiToken; }
+	bool usesEnvToken() const { return !envToken.empty(); }
 
-	// The Gleem API base URL actually used (empty = https://gleem.gg).
-	const std::string &gleemUrl() const { return statsUrl.empty() ? envUrl : statsUrl; }
+	// The Gleem API base URL actually used (empty = https://gleem.gg). The
+	// environment's token belongs to the environment's URL.
+	const std::string &gleemUrl() const { return usesEnvToken() ? envUrl : statsUrl; }
 
 	bool isConfigured() const
 	{

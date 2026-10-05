@@ -22,11 +22,17 @@
 
 #include <QDialog>
 
+#include <string>
+#include <vector>
+
+struct GleemDevice;
+
 class QCheckBox;
 class QComboBox;
 class QFormLayout;
 class QLabel;
 class QLineEdit;
+class QPushButton;
 class QSpinBox;
 
 // Modal dialog for editing the plugin configuration.
@@ -43,15 +49,30 @@ private:
 	static void populateTextSources(QComboBox *combo);
 	static void selectOrInsert(QComboBox *combo, const QString &value);
 	void updateServerFields();
+	// Gleem: fetches the account's IRL Sidekicks in the background and fills deviceCombo.
+	void loadDevices();
+	void showDevices(unsigned request, bool ok, const std::vector<GleemDevice> &devices, const std::string &error);
+	void setDeviceItems(const std::vector<GleemDevice> &devices);
+	QString selectedDevice() const;
 
 	QComboBox *typeCombo = nullptr;
 	QLineEdit *urlEdit = nullptr;
 	QLineEdit *publisherEdit = nullptr;
 	QLineEdit *tokenEdit = nullptr;
+	QWidget *deviceRow = nullptr;
+	QComboBox *deviceCombo = nullptr;
+	QPushButton *refreshButton = nullptr;
+	QLabel *deviceHint = nullptr;
+	// The device to keep selected while the list (re)loads.
+	QString wantedDevice;
+	// Only the newest request may fill the list.
+	unsigned deviceRequest = 0;
 	QFormLayout *serverForm = nullptr;
 	QLabel *urlHint = nullptr;
 	QLabel *publisherHint = nullptr;
 	QLabel *tokenHint = nullptr;
+	// Gleem: the environment provides token and API URL, so their fields are hidden.
+	bool envCredentials = false;
 	QComboBox *normalSceneCombo = nullptr;
 	QComboBox *offlineSceneCombo = nullptr;
 	QComboBox *infoSourceCombo = nullptr;

@@ -31,7 +31,7 @@ Plugin settings to test against this server:
 
   SRT Relay:     URL http://127.0.0.1:18765          publisher publish/test/
   Belabox Cloud: URL http://127.0.0.1:18765/belabox  publisher live
-  Gleem IRL:     API URL http://127.0.0.1:18765  token mock-token  box empty (or the mock uuid)
+  Gleem IRL:     API URL http://127.0.0.1:18765  token mock-token  IRL Sidekick: first, or Mock Backpack
 
 Only the Python standard library is used.
 """
@@ -369,7 +369,7 @@ def main():
     log(f"listening on {base}")
     log(f"  srtrelay:      URL {base}          publisher {args.stream_id}")
     log(f"  Belabox Cloud: URL {base}/belabox  publisher {args.publisher}")
-    log(f"  Gleem IRL:     API URL {base}  token {GLEEM_TOKEN}  box empty or {GLEEM_UUID}")
+    log(f"  Gleem IRL:     API URL {base}  token {GLEEM_TOKEN}  IRL Sidekick: first, or Mock Backpack")
     log(f"  control:       {base}/control/offline  {base}/control/online  {base}/control/rtt/2500")
     log(f"stream is {'ONLINE' if STATE.online else 'OFFLINE'}, base RTT {args.rtt} ms")
 
